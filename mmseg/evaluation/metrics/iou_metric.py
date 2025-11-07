@@ -17,6 +17,19 @@ from mmseg.registry import METRICS
 
 @METRICS.register_module()
 class IoUMetric(BaseMetric):
+    """
+    IoU 评估指标，支持 mIoU/mDice/mFscore
+    Args: 
+        ignore_index: 需要忽略的像素类别索引，默认 255
+        iou_metrics: 需要计算的指标，默认 ['mIoU']
+        nan_to_num: 若给出，则将 nan 替换为该数值，方便后续日志打印
+        beta: F-score 中 recall 的权重，默认 1 即 F1
+        output_dir: 若指定，则将预测图以 png 形式写入该目录（测试集无标签时有用）
+        format_only: 标识测试模式，仅做结果保存，不计算指标（用于生成提交文件）
+        prefix: 指标名前缀，避免多 evaluator 重名
+    Funcs:
+        process: 每个 batch 调用一次并保存中间结果，训练验证时计算 IoU，测试时仅保存预测图
+    """
     """IoU evaluation metric.
 
     Args:
@@ -74,13 +87,16 @@ class IoUMetric(BaseMetric):
             data_batch (dict): A batch of data from the dataloader.
             data_samples (Sequence[dict]): A batch of outputs from the model.
         """
+        # 从 dataset_meta 里读取类别数（在 evaluator 初始化阶段由 runner 注入）
         num_classes = len(self.dataset_meta['classes'])
         for data_sample in data_samples:
+            # 模型输出: pred_sem_seg 是 Logits 经 argmax 后的分割图
             pred_label = data_sample['pred_sem_seg']['data'].squeeze()
             # format_only always for test dataset without ground truth
             if not self.format_only:
                 label = data_sample['gt_sem_seg']['data'].squeeze().to(
                     pred_label)
+                # 计算该图片的交集、并集、预测像素数、真值像素数
                 self.results.append(
                     self.intersect_and_union(pred_label, label, num_classes,
                                              self.ignore_index))
